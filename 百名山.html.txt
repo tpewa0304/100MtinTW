@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>台灣百名山：我的攀登地圖</title>
+    
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <style>
+        body { margin: 0; padding: 0; font-family: "Microsoft JhengHei", "PingFang TC", sans-serif; background: #f0f2f5; }
+        #map { height: 100vh; width: 100%; z-index: 1; }
+        
+        /* 頂部控制面板 */
+        #top-panel {
+            position: absolute; top: 15px; left: 50%; transform: translateX(-50%);
+            z-index: 1000; background: white; padding: 12px 25px;
+            border-radius: 50px; box-shadow: 0 4px 20px rgba(0,0,0,0.15);
+            display: flex; align-items: center; gap: 20px; min-width: 350px;
+        }
+        #progress-info { font-weight: bold; color: #2c3e50; white-space: nowrap; }
+        #progress-bar { width: 150px; height: 12px; background: #eee; border-radius: 6px; overflow: hidden; }
+        #progress-fill { width: 0%; height: 100%; background: linear-gradient(90deg, #f1c40f, #f39c12); transition: width 0.6s cubic-bezier(0.175, 0.885, 0.32, 1.275); }
+        #reset-btn { cursor: pointer; border: none; background: #e74c3c; color: white; padding: 5px 12px; border-radius: 15px; font-size: 12px; transition: 0.3s; }
+        #reset-btn:hover { background: #c0392b; }
+
+        /* 標籤樣式 */
+        .mountain-label {
+            background: rgba(255, 255, 255, 0.85); border: 1px solid #999;
+            border-radius: 3px; padding: 1px 4px; font-size: 10px; color: #333;
+            box-shadow: 1px 1px 2px rgba(0,0,0,0.1); white-space: nowrap;
+        }
+        .visited-label {
+            background: #f1c40f !important; color: #000 !important;
+            border-color: #d4ac0d !important; font-weight: bold; z-index: 1000 !important;
+        }
+
+        .popup-card { text-align: center; padding: 5px; }
+        .popup-card h3 { margin: 5px 0; font-size: 16px; }
+        .popup-card label { display: block; margin-top: 10px; cursor: pointer; font-size: 14px; background: #f8f9fa; padding: 8px; border-radius: 5px; }
+    </style>
+</head>
+<body>
+
+    <div id="top-panel">
+        <div id="progress-info">攀登進度：<span id="progress-text">0/100</span></div>
+        <div id="progress-bar"><div id="progress-fill"></div></div>
+        <button id="reset-btn" onclick="clearData()">清除紀錄</button>
+    </div>
+
+    <div id="map"></div>
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script>
+        const mountains = [
+            {id: "001", name: "磺嘴山", type: "中級山", lat: 25.168, lng: 121.574},
+            {id: "002", name: "大屯山", type: "小百岳", lat: 25.176, lng: 121.521},
+            {id: "003", name: "七星山", type: "小百岳", lat: 25.170, lng: 121.545},
+            {id: "004", name: "觀音山", type: "小百岳", lat: 25.137, lng: 121.423},
+            {id: "005", name: "基隆山", type: "小百岳", lat: 25.119, lng: 121.846},
+            {id: "006", name: "獅仔頭山", type: "小百岳", lat: 24.908, lng: 121.503},
+            {id: "007", name: "北插天山", type: "中級山", lat: 24.792, lng: 121.448},
+            {id: "008", name: "阿玉山", type: "中級山", lat: 24.789, lng: 121.603},
+            {id: "009", name: "鳥嘴山", type: "中級山", lat: 24.583, lng: 121.283},
+            {id: "010", name: "塔曼山", type: "中級山", lat: 24.707, lng: 121.436},
+            {id: "011", name: "李崠山", type: "小百岳", lat: 24.646, lng: 121.300},
+            {id: "012", name: "巴博庫魯山", type: "中級山", lat: 24.673, lng: 121.470},
+            {id: "013", name: "雪白山", type: "中級山", lat: 24.611, lng: 121.373},
+            {id: "014", name: "霞喀羅大山", type: "中級山", lat: 24.567, lng: 121.233},
+            {id: "015", name: "仙山", type: "小百岳", lat: 24.545, lng: 120.948},
+            {id: "016", name: "加里山", type: "小百岳", lat: 24.516, lng: 121.033},
+            {id: "017", name: "鹿場大山", type: "中級山", lat: 24.498, lng: 121.050},
+            {id: "018", name: "虎山", type: "中級山", lat: 24.467, lng: 120.983},
+            {id: "019", name: "大霸尖山", type: "百岳", lat: 24.464, lng: 121.258},
+            {id: "020", name: "東洗水山", type: "中級山", lat: 24.408, lng: 120.983},
+            {id: "021", name: "桃山", type: "百岳", lat: 24.417, lng: 121.300},
+            {id: "022", name: "品田山", type: "百岳", lat: 24.428, lng: 121.267},
+            {id: "023", name: "穆特勒布山", type: "百岳", lat: 24.417, lng: 121.250},
+            {id: "024", name: "雪山", type: "百岳", lat: 24.383, lng: 121.233},
+            {id: "025", name: "火炎山", type: "小百岳", lat: 24.363, lng: 120.730},
+            {id: "026", name: "馬那邦山", type: "小百岳", lat: 24.367, lng: 120.917},
+            {id: "027", name: "南湖東峰", type: "百岳", lat: 24.364, lng: 121.441},
+            {id: "028", name: "南湖大山", type: "百岳", lat: 24.358, lng: 121.433},
+            {id: "029", name: "中央尖山", type: "百岳", lat: 24.317, lng: 121.400},
+            {id: "030", name: "稍來山", type: "小百岳", lat: 24.233, lng: 120.967},
+            {id: "031", name: "白姑大山", type: "百岳", lat: 24.204, lng: 121.107},
+            {id: "032", name: "東卯山", type: "中級山", lat: 24.183, lng: 120.933},
+            {id: "033", name: "合歡北峰", type: "百岳", lat: 24.181, lng: 121.283},
+            {id: "034", name: "八仙山", type: "中級山", lat: 24.167, lng: 121.017},
+            {id: "035", name: "合歡山", type: "百岳", lat: 24.142, lng: 121.272},
+            {id: "036", name: "守城大山", type: "中級山", lat: 24.067, lng: 121.083},
+            {id: "037", name: "能高山", type: "百岳", lat: 24.033, lng: 121.283},
+            {id: "038", name: "馬海濮富士山", type: "中級山", lat: 24.017, lng: 121.183},
+            {id: "039", name: "能高南峰", type: "百岳", lat: 24.000, lng: 121.283},
+            {id: "040", name: "九份二山", type: "小百岳", lat: 23.950, lng: 120.833},
+            {id: "041", name: "干卓萬山", type: "百岳", lat: 23.900, lng: 121.133},
+            {id: "042", name: "安東軍山", type: "百岳", lat: 23.867, lng: 121.267},
+            {id: "043", name: "集集大山", type: "小百岳", lat: 23.850, lng: 120.817},
+            {id: "044", name: "水社大山", type: "中級山", lat: 23.842, lng: 120.950},
+            {id: "045", name: "治茆山", type: "中級山", lat: 23.800, lng: 120.983},
+            {id: "046", name: "鳳凰山", type: "小百岳", lat: 23.700, lng: 120.817},
+            {id: "047", name: "東郡大山", type: "百岳", lat: 23.683, lng: 121.050},
+            {id: "048", name: "石壁山", type: "小百岳", lat: 23.608, lng: 120.717},
+            {id: "049", name: "丹大山", type: "百岳", lat: 23.633, lng: 121.183},
+            {id: "050", name: "雲嘉大尖山", type: "小百岳", lat: 23.583, lng: 120.617},
+            {id: "051", name: "郡大山", type: "百岳", lat: 23.583, lng: 120.950},
+            {id: "052", name: "大塔山", type: "小百岳", lat: 23.533, lng: 120.800},
+            {id: "053", name: "馬利加南山", type: "百岳", lat: 23.517, lng: 121.117},
+            {id: "054", name: "馬博拉斯山", type: "百岳", lat: 23.517, lng: 121.067},
+            {id: "055", name: "秀姑巒山", type: "百岳", lat: 23.500, lng: 121.050},
+            {id: "056", name: "玉山北峰", type: "百岳", lat: 23.485, lng: 120.953},
+            {id: "057", name: "大水窟山", type: "百岳", lat: 23.467, lng: 121.050},
+            {id: "058", name: "玉山", type: "百岳", lat: 23.470, lng: 120.957},
+            {id: "059", name: "玉穗山", type: "中級山", lat: 23.233, lng: 120.817},
+            {id: "060", name: "大凍山", type: "小百岳", lat: 23.317, lng: 120.500},
+            {id: "061", name: "向陽山", type: "百岳", lat: 23.283, lng: 120.983},
+            {id: "062", name: "關山", type: "百岳", lat: 23.267, lng: 120.917},
+            {id: "063", name: "石山", type: "中級山", lat: 23.117, lng: 120.783},
+            {id: "064", name: "卑南主山", type: "百岳", lat: 23.083, lng: 120.867},
+            {id: "065", name: "尾寮山", type: "小百岳", lat: 22.867, lng: 120.633},
+            {id: "066", name: "大母母山", type: "中級山", lat: 22.750, lng: 120.750},
+            {id: "067", name: "知本主山", type: "中級山", lat: 22.717, lng: 120.933},
+            {id: "068", name: "井步山", type: "中級山", lat: 22.733, lng: 120.733},
+            {id: "069", name: "霧頭山", type: "中級山", lat: 22.683, lng: 120.783},
+            {id: "070", name: "壽山", type: "小百岳", lat: 22.650, lng: 120.267},
+            {id: "071", name: "北大武山", type: "百岳", lat: 22.628, lng: 120.760},
+            {id: "072", name: "南大武山", type: "中級山", lat: 22.567, lng: 120.750},
+            {id: "073", name: "里龍山", type: "小百岳", lat: 22.183, lng: 120.717},
+            {id: "074", name: "烘爐地山", type: "中級山", lat: 24.850, lng: 121.733},
+            {id: "075", name: "三星山", type: "小百岳", lat: 24.517, lng: 121.567},
+            {id: "076", name: "飯包山", type: "中級山", lat: 24.500, lng: 121.683},
+            {id: "077", name: "清水大山", type: "中級山", lat: 24.233, lng: 121.617},
+            {id: "078", name: "三角錐山", type: "中級山", lat: 24.200, lng: 121.567},
+            {id: "079", name: "塔山", type: "中級山", lat: 24.150, lng: 121.533},
+            {id: "080", name: "佐久間山", type: "中級山", lat: 24.117, lng: 121.517},
+            {id: "081", name: "奇萊北峰", type: "百岳", lat: 24.114, lng: 121.333},
+            {id: "082", name: "太魯閣大山", type: "百岳", lat: 24.083, lng: 121.433},
+            {id: "083", name: "鯉魚山", type: "小百岳", lat: 23.933, lng: 121.517},
+            {id: "084", name: "木瓜山", type: "中級山", lat: 23.900, lng: 121.467},
+            {id: "085", name: "針山", type: "中級山", lat: 23.867, lng: 121.367},
+            {id: "086", name: "南二子山", type: "中級山", lat: 23.833, lng: 121.417},
+            {id: "087", name: "王武塔山", type: "中級山", lat: 23.750, lng: 121.383},
+            {id: "088", name: "阿屘那來山", type: "百岳", lat: 23.717, lng: 121.300},
+            {id: "089", name: "八里灣山", type: "小百岳", lat: 23.533, lng: 121.517},
+            {id: "090", name: "馬西山", type: "百岳", lat: 23.417, lng: 121.183},
+            {id: "091", name: "玉里山", type: "中級山", lat: 23.367, lng: 121.283},
+            {id: "092", name: "新康山", type: "百岳", lat: 23.333, lng: 121.133},
+            {id: "093", name: "成廣澳山", type: "中級山", lat: 23.167, lng: 121.350},
+            {id: "094", name: "新港山", type: "中級山", lat: 23.133, lng: 121.317},
+            {id: "095", name: "美奈田主山", type: "中級山", lat: 22.950, lng: 120.933},
+            {id: "096", name: "都蘭山", type: "小百岳", lat: 22.883, lng: 121.183},
+            {id: "097", name: "火燒山", type: "離島", lat: 22.650, lng: 121.483},
+            {id: "098", name: "太麻里山", type: "小百岳", lat: 22.633, lng: 120.967},
+            {id: "099", name: "紅頭山", type: "離島", lat: 22.050, lng: 121.550},
+            {id: "100", name: "太武山", type: "離島", lat: 24.461, lng: 118.426}
+        ];
+
+        const map = L.map('map', { zoomControl: false }).setView([23.8, 121.0], 8);
+        L.control.zoom({ position: 'bottomright' }).addTo(map);
+
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { 
+            attribution: 'Map &copy; OpenStreetMap' 
+        }).addTo(map);
+
+        let visitedIds = JSON.parse(localStorage.getItem('visited_100_peaks') || '[]');
+
+        function updateUI() {
+            const count = visitedIds.length;
+            const total = mountains.length;
+            const percent = (count / total) * 100;
+            document.getElementById('progress-fill').style.width = percent + '%';
+            document.getElementById('progress-text').innerText = `${count} / ${total}`;
+        }
+
+        function togglePeak(id) {
+            const index = visitedIds.indexOf(id);
+            if (index > -1) {
+                visitedIds.splice(index, 1);
+            } else {
+                visitedIds.push(id);
+            }
+            localStorage.setItem('visited_100_peaks', JSON.stringify(visitedIds));
+            location.reload(); // 重新整理以反映地圖顏色變化
+        }
+
+        function clearData() {
+            if(confirm("確定要清除所有攀登紀錄嗎？")) {
+                localStorage.removeItem('visited_100_peaks');
+                location.reload();
+            }
+        }
+
+        const colors = { "百岳": "#d63031", "小百岳": "#00b894", "中級山": "#0984e3", "離島": "#6c5ce7" };
+
+        mountains.forEach(m => {
+            const isVisited = visitedIds.includes(m.id);
+            const mainColor = isVisited ? "#f1c40f" : (colors[m.type] || "#333");
+
+            // 圓點標記
+            const circle = L.circleMarker([m.lat, m.lng], {
+                radius: 7, fillColor: mainColor, color: "#fff", weight: 2, fillOpacity: 0.9
+            }).addTo(map);
+
+            // 彈窗
+            const popupHtml = `
+                <div class="popup-card">
+                    <h3>${m.id} ${m.name}</h3>
+                    <p>海拔分類：${m.type}</p>
+                    <label>
+                        <input type="checkbox" ${isVisited ? 'checked' : ''} onchange="togglePeak('${m.id}')"> 
+                        <b>已登頂 (Mark as Visited)</b>
+                    </label>
+                </div>
+            `;
+            circle.bindPopup(popupHtml);
+
+            // 文字標籤
+            const labelClass = isVisited ? 'mountain-label visited-label' : 'mountain-label';
+            const labelIcon = L.divIcon({
+                className: 'label-container',
+                html: `<div class="${labelClass}">${m.id} ${m.name}</div>`,
+                iconSize: [80, 20], iconAnchor: [40, -12]
+            });
+            L.marker([m.lat, m.lng], { icon: labelIcon, interactive: false }).addTo(map);
+        });
+
+        updateUI();
+    </script>
+</body>
+</html>
